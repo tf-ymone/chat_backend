@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Simple Chat Application using StompJs</title>
+    <link type="text/css" rel="stylesheet" href="../../assets/style.css">
+</head>
+<body>
+<div id="wrapper">
+    <ul>
+        <li>Open multiple browsers or tabs to chat across those.</li>
+        <li>You will need a STOMP broker running. The defaults will work for fresh RabbitMQ on local machine.</li>
+        <li>Adjust the <a href="https://stomp-js.github.io/api-docs/latest/classes/StompConfig.html">configuration</a>
+            as per your STOMP broker.</li>
+        <li>A guide at <a href="https://stomp-js.github.io/guide/stompjs/2018/06/28/using-stompjs-v5.html">
+            Using StompJs v5</a></li>
+        <li>
+            <a href="https://stomp-js.github.io/guide/stompjs/rx-stomp/ng2-stompjs/2018/09/10/using-stomp-with-sockjs.html">
+                Using STOMP with SockJS</a></li>
+        <li>For details on API calls see:
+            <a href="https://stomp-js.github.io/api-docs/latest/classes/Client.html">
+                API Reference</a></li>
+        <li>The html/css is heavily based on
+            <a href="https://code.tutsplus.com/tutorials/how-to-create-a-simple-web-based-chat-application--net-5931">
+                Simple Web-Based Chat Application</a></li>
+    </ul>
+    <div id="menu">
+        <p class="welcome">Welcome, <input title="username" name="username" id="username" type="text" value="Change Me">
+        </p>
+    </div>
+
+    <div id="chatbox"></div>
+
+    <input name="usermsg" type="text" id="usermsg" size="63" title="usermsg"/>
+    <button name="submitmsg" id="submitmsg">Send</button>
+</div>
+
+<!-- It is used for DOM manipulation, not mandatory to use stompjs -->
+<script src="https://cdn.jsdelivr.net/npm/jquery@3.3.1/dist/jquery.min.js"></script>
+
+<!-- Include from CDN for better performance, alternatively you can locally copy as well -->
+<script src="https://cdn.jsdelivr.net/npm/@stomp/stompjs@5.0.0/bundles/stomp.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sockjs-client@1/dist/sockjs.min.js"></script>
+
+
+<script type="application/javascript">
+    $(function () {
+        const client = new StompJs.Client({
+            brokerURL: "ws://127.0.0.1:8080/chat",
+            connectHeaders: {
+                login: 'user',
+                passcode: 'password',
+            },
+            debug: function (str) {
+                console.log(str);
+            },
+            reconnectDelay: 5000,
+            heartbeatIncoming: 4000,
+            heartbeatOutgoing: 4000,
+        });
+
+        // Fallback code
+        if (typeof client !== 'function') {
+            // For SockJS you need to set a factory that creates a new SockJS instance
+            // to be used for each (re)connect
+            console.log("re connect!");
+            client.webSocketFactory = function () {
+                // Note that the URL is different from the WebSocket URL
+                return new SockJS('http://localhost:8080/chat');
+            };
+        }
+
+        client.onConnect = function (frame) {
+            // Do something, all subscribes must be done is this callback
+            // This is needed because this will be executed after a (re)connect
+            callback = function(message) {
+                // called when the client receives a STOMP message from the server
+                console.log(message);
+                if (message.body) {
+                    alert("got message with body " + message.body)
+                } else {
+                    alert("got empty message");
+                }
+            };
+
+            var subscription = client.subscribe("/queue/test", callback);
+
+        };
+
+        client.onStompError = function (frame) {
+            // Will be invoked in case of error encountered at Broker
+            // Bad login/passcode typically will cause an error
+            // Complaint brokers will set `message` header with a brief message. Body may contain details.
+            // Compliant brokers will terminate the connection after any error
+            console.log('Broker reported error: ' + frame.headers['message']);
+            console.log('Additional details: ' + frame.body);
+        };
+
+        client.activate();
+
+
+        // For the demo, set a random display user name for the chat, just feels nice
+        $("#username").val("User " + Math.round(Math.random() * 100));
+
+        // Set the DOM event handlers must not be inside onConnect - other for each reconnect it will keep getting added
+        $("#submitmsg").click(function () {
+            if (publishMessage($("#username").val(), $("#usermsg").val())) {
+                clearMessageInput();
+            }
+        });
+
+        function clearMessageInput() {
+            $("#usermsg").val("");
+        }
+
+        function publishMessage(user, message) {
+            // trying to publish a message when the broker is not connected will throw an exception
+            if (!client.connected) {
+                alert("Broker disconnected, can't send message.");
+                return false;
+            }
+            if (message.length > 0) {
+                const payLoad = { user: user, message: message };
+                console.log(payLoad);
+                console.log(JSON.stringify(payLoad));
+                // You can additionally pass headers
+                client.publish({destination: '/pub/greeting', body: JSON.stringify(payLoad)});
+            }
+            return true;
+        }
+
+        function displayIncomingMessage(user, message) {
+            const msgDiv = $("<div>").addClass("msgln");
+            msgDiv.html('<span class="user">[' + user + ']: </span><span class="message">' + message + '</span>');
+            $("#chatbox").append(msgDiv);
+        }
+    })
+</script>
+</body>
+</html>
